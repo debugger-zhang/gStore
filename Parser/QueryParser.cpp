@@ -849,7 +849,7 @@ antlrcpp::Any QueryParser::visitGroupOrUnionGraphPattern(SPARQLParser::GroupOrUn
 	{
 		group_pattern.addOneGroup();
 		visitGroupGraphPattern(ctx->groupGraphPattern(0), group_pattern.getLastGroup());
-        if(group_pattern.getLastGroup().sub_group_pattern.size()==1&&group_pattern.getLastGroup().sub_group_pattern[0].type==QueryTree::GroupPattern::SubGroupPattern::Subquery_type&&group_pattern.getLastGroup().sub_group_pattern[0].subquery.getLimit()==666666666){
+        if(group_pattern.getLastGroup().sub_group_pattern.size()==1&&group_pattern.getLastGroup().sub_group_pattern[0].type==QueryTree::GroupPattern::SubGroupPattern::Subquery_type){
             std::vector<QueryTree::GroupPattern::SubGroupPattern> tmp;
             tmp.swap(group_pattern.getLastGroup().sub_group_pattern[0].subquery.getGroupPattern().sub_group_pattern);
             group_pattern.getLastGroup().sub_group_pattern.clear();
