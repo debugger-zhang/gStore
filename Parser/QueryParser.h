@@ -44,6 +44,9 @@ public:
 	antlrcpp::Any visitSelectClause(SPARQLParser::SelectClauseContext *ctx);
 	antlrcpp::Any visitGroupGraphPattern(SPARQLParser::GroupGraphPatternContext *ctx, \
 		QueryTree::GroupPattern &group_pattern);
+	antlrcpp::Any visitSubSelect(SPARQLParser::SubSelectContext *ctx, \
+		QueryTree::GroupPattern &group_pattern);
+	antlrcpp::Any visitSubSelect_inner(SPARQLParser::SubSelectContext *ctx);
 	antlrcpp::Any visitGroupGraphPatternSub(SPARQLParser::GroupGraphPatternSubContext *ctx, \
 		QueryTree::GroupPattern &group_pattern);
 	antlrcpp::Any visitTriplesBlock(SPARQLParser::TriplesBlockContext *ctx, QueryTree::GroupPattern &group_pattern);

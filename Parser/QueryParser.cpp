@@ -720,13 +720,43 @@ void QueryParser::buildCompTree(antlr4::tree::ParseTree *root, int oper_pos, Que
 antlrcpp::Any QueryParser::visitGroupGraphPattern(SPARQLParser::GroupGraphPatternContext *ctx, \
 	QueryTree::GroupPattern &group_pattern)
 {
-	// subSelect not supported
-
-	visitGroupGraphPatternSub(ctx->groupGraphPatternSub(), group_pattern);
+	if (ctx->subSelect()) visitSubSelect(ctx->subSelect(), group_pattern);
+	else visitGroupGraphPatternSub(ctx->groupGraphPatternSub(), group_pattern);
 
 	return antlrcpp::Any(); 
 }
 
+antlrcpp::Any QueryParser::visitSubSelect(SPARQLParser::SubSelectContext *ctx, \
+	QueryTree::GroupPattern &group_pattern)
+{
+    //cout<<"##Enter visitSubSelect##"<<ctx->getText()<<endl;
+	group_pattern.addOneSubquery();
+    QueryParser new_parser(&group_pattern.getLastSubquery());
+    new_parser.prefix_map=prefix_map;
+    new_parser.visitSubSelect_inner(ctx);
+    if(!group_pattern.getLastSubquery().checkProjectionAsterisk()){
+        QueryTreeRelabeler qtr("_aaaaaaaaaaaa");
+        qtr.excluding=group_pattern.getLastSubquery().getResultProjectionVarset();
+        for(int i=1;i<=12;i++) qtr.suffix[i]+=rand()%26;
+        group_pattern.getLastSubquery().relabel(qtr);
+    }
+    //cout<<"##Result visitSubSelect##"<<endl;
+    //group_pattern.print(0);
+    //cout<<"##Exit visitSubSelect##"<<endl;
+	return antlrcpp::Any();
+}
+
+antlrcpp::Any QueryParser::visitSubSelect_inner(SPARQLParser::SubSelectContext *ctx)
+{
+    //selectClause
+    visit(ctx->selectClause());
+    //whereClause
+    visitWhereClause(ctx->whereClause(), query_tree_ptr->getGroupPattern());
+    //solutionModifier
+    visit(ctx->solutionModifier());
+    //valuesClause
+	return antlrcpp::Any();
+}
 /**
 	groupGraphPatternSub : triplesBlock? graphPatternTriplesBlock* ;
 	graphPatternTriplesBlock : graphPatternNotTriples '.'? triplesBlock? ;
@@ -819,6 +849,12 @@ antlrcpp::Any QueryParser::visitGroupOrUnionGraphPattern(SPARQLParser::GroupOrUn
 	{
 		group_pattern.addOneGroup();
 		visitGroupGraphPattern(ctx->groupGraphPattern(0), group_pattern.getLastGroup());
+        if(group_pattern.getLastGroup().sub_group_pattern.size()==1&&group_pattern.getLastGroup().sub_group_pattern[0].type==QueryTree::GroupPattern::SubGroupPattern::Subquery_type&&group_pattern.getLastGroup().sub_group_pattern[0].subquery.getLimit()==666666666){
+            std::vector<QueryTree::GroupPattern::SubGroupPattern> tmp;
+            tmp.swap(group_pattern.getLastGroup().sub_group_pattern[0].subquery.getGroupPattern().sub_group_pattern);
+            group_pattern.getLastGroup().sub_group_pattern.clear();
+            group_pattern.getLastGroup().sub_group_pattern.swap(tmp);
+        }
 	}
 	else
 	{

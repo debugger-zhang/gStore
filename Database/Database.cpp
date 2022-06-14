@@ -599,10 +599,10 @@ Database::setPreMap()
 			unsigned len = 0;
 			this->kvstore->getsubIDlistBypreID(i,list,len,true);
 			this->pre2sub[i] = len;
-			free(list);
+			delete [] list;
 			this->kvstore->getobjIDlistBypreID(i,list,len,true);
 			this->pre2obj[i] = len;
-			free(list);
+			delete [] list;
 		}
 		else
 		{
@@ -1725,8 +1725,8 @@ Database::query(const string _query, ResultSet& _result_set, FILE* _fp, bool upd
 	catch(const std::runtime_error& e2)
 	{
 		cout<<"catch run_time error exception"<<endl;
-		throw std::runtime_error(e2.what());
 		std::cerr<<e2.what()<<"\n";
+		throw std::runtime_error(e2.what());
 	}
 	catch(const std::exception& e)
 	{

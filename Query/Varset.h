@@ -36,6 +36,8 @@ class Varset
 
 		std::vector<int> mapTo(const Varset &_varset) const;
 
+		//Varset& operator = (const Varset &_varset);
+
 		void print() const;
 };
 

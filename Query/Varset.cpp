@@ -132,7 +132,14 @@ vector<int> Varset::mapTo(const Varset &_varset) const
 
 	return r;
 }
+/*
+Varset& Varset::operator = (const Varset &_varset)
+{
+	vars=_varset.vars;
 
+	return *this;
+}
+*/
 void Varset::print() const
 {
 	printf("Varset: ");

@@ -234,9 +234,17 @@ void QueryTree::GroupPattern::FilterTree::FilterTreeNode::print(int dep)
 	@param _pattern the triple to add.
 */
 void QueryTree::GroupPattern::addOnePattern(Pattern _pattern)
-{
+{    
+    //cout<<"##before##"<<endl;
+    //print(0);
+    //for(int i=0;i<sub_group_pattern.size();i++) {cout<<sub_group_pattern[i].type<<' '; if(sub_group_pattern[i].type==0){cout<<"(";for(int j=0;j<sub_group_pattern[i].group_pattern.sub_group_pattern.size();j++) cout<<sub_group_pattern[i].group_pattern.sub_group_pattern[j].type<<' '; cout<<")";}}
+    //cout<<"##process##"<<&sub_group_pattern[0]<<" "<<sub_group_pattern.capacity()<<endl;
 	this->sub_group_pattern.push_back(SubGroupPattern(SubGroupPattern::Pattern_type));
 	this->sub_group_pattern.back().pattern = _pattern;
+    //cout<<"##after##"<<endl;
+    //print(0);
+    //for(int i=0;i<sub_group_pattern.size();i++) {cout<<sub_group_pattern[i].type<<' '; if(sub_group_pattern[i].type==0){cout<<"(";for(int j=0;j<sub_group_pattern[i].group_pattern.sub_group_pattern.size();j++) cout<<sub_group_pattern[i].group_pattern.sub_group_pattern[j].type<<' '; cout<<")";}}
+    //cout<<"##end##"<<&sub_group_pattern[0]<<" "<<sub_group_pattern.capacity()<<endl;
 }
 
 /**
@@ -375,6 +383,28 @@ QueryTree::GroupPattern::Bind& QueryTree::GroupPattern::getLastBind()
 		throw "QueryTree::GroupPattern::getLastBind failed";
 
 	return this->sub_group_pattern.back().bind;
+}/**
+	Add a BIND to this group graph pattern.
+*/
+
+void QueryTree::GroupPattern::addOneSubquery()
+{
+	this->sub_group_pattern.push_back(SubGroupPattern(SubGroupPattern::Subquery_type));
+}
+
+/**
+	Get the BIND at the back of this group graph pattern.
+	If the component at the back of this group graph pattern is not a BIND, throw
+	an exception.
+
+	@return the requested BIND.
+*/
+QueryTree& QueryTree::GroupPattern::getLastSubquery()
+{
+	if (this->sub_group_pattern.back().type != SubGroupPattern::Subquery_type)
+		throw "QueryTree::GroupPattern::getLastSubquery failed";
+
+	return this->sub_group_pattern.back().subquery;
 }
 
 /**
@@ -445,12 +475,21 @@ void QueryTree::GroupPattern::getVarset()
 			this->sub_group_pattern[i].optional.getVarset();
 		}
 		else if (this->sub_group_pattern[i].type == SubGroupPattern::Filter_type)
+		{
 			this->sub_group_pattern[i].filter.varset = this->sub_group_pattern[i].filter.getVarset();
+		}
 		else if (this->sub_group_pattern[i].type == SubGroupPattern::Bind_type)
 		{
 			this->sub_group_pattern[i].bind.varset = Varset(this->sub_group_pattern[i].bind.var);
 			this->group_pattern_resultset_minimal_varset += this->sub_group_pattern[i].bind.varset;
 			this->group_pattern_resultset_maximal_varset += this->sub_group_pattern[i].bind.varset;
+		}
+		else if (this->sub_group_pattern[i].type == SubGroupPattern::Subquery_type)
+		{
+			this->sub_group_pattern[i].subquery.getGroupPattern().getVarset();
+            this->group_pattern_resultset_minimal_varset += sub_group_pattern[i].subquery.getResultProjectionVarset();
+            this->group_pattern_resultset_maximal_varset += sub_group_pattern[i].subquery.getResultProjectionVarset();
+            this->group_pattern_subject_object_maximal_varset += sub_group_pattern[i].subquery.getResultProjectionVarset();
 		}
 }
 
@@ -530,6 +569,10 @@ pair<Varset, Varset> QueryTree::GroupPattern::checkNoMinusAndOptionalVarAndSafeF
 				check_condition = false;
 
 			occur_varset += this->sub_group_pattern[i].bind.varset;
+		}
+		else if (this->sub_group_pattern[i].type == SubGroupPattern::Subquery_type)
+		{
+			check_condition = false;
 		}
 
 	return make_pair(occur_varset, new_ban_varset);
@@ -623,6 +666,15 @@ void QueryTree::GroupPattern::print(int dep)
 		{
 			for (int t = 0; t <= dep; t++)	printf("\t");
 			printf("BIND(%s\tAS\t%s)", this->sub_group_pattern[i].bind.str.c_str(), this->sub_group_pattern[i].bind.var.c_str());
+			printf("\n");
+		}
+		else if (this->sub_group_pattern[i].type == SubGroupPattern::Subquery_type)
+		{
+			for (int t = 0; t <= dep; t++)	printf("\t");
+            this->sub_group_pattern[i].subquery.getResultProjectionVarset().print();
+            cout<<"<<";
+			this->sub_group_pattern[i].subquery.print();
+            cout<<">>";
 			printf("\n");
 		}
 
@@ -1266,6 +1318,7 @@ void QueryTree::print()
 // 		delete rchild;
 // }
 
+
 void QueryTree::CompTreeNode::print(int dep)
 {
 	if (children.empty())
@@ -1342,4 +1395,56 @@ Varset QueryTree::CompTreeNode::getVarset()
 	// // !lchild && !rchild
 	// if (val[0] == '?')
 	// 	return Varset(val);
+}
+
+void QueryTree::relabel(QueryTreeRelabeler& qtr){
+    for(vector<ProjectionVar>::iterator it=projection.begin(); it!=projection.end(); it++) it->relabel(qtr);
+    qtr.relabel(group_by);
+    for(vector<Order>::iterator it=order_by.begin(); it!=order_by.end(); it++) it->relabel(qtr);
+    group_pattern.relabel(qtr);
+}
+
+void QueryTree::relabel_full(QueryTreeRelabeler& qtr){
+    for(vector<ProjectionVar>::iterator it=projection.begin(); it!=projection.end(); it++) it->relabel_full(qtr);
+    qtr.relabel(group_by);
+    for(vector<Order>::iterator it=order_by.begin(); it!=order_by.end(); it++) it->relabel(qtr);
+    group_pattern.relabel(qtr);
+}
+
+void GroupPattern::relabel(QueryTreeRelabeler& qtr){
+    qtr.relabel(group_pattern_resultset_minimal_varset);
+    qtr.relabel(group_pattern_resultset_maximal_varset);
+    qtr.relabel(group_pattern_subject_object_maximal_varset);
+    qtr.relabel(group_pattern_predicate_maximal_varset);
+    for(vector<SubGroupPattern>::iterator it=sub_group_pattern.begin(); it!=sub_group_pattern.end(); it++) it->relabel(qtr);
+}
+
+void GroupPattern::SubGroupPattern::relabel(QueryTreeRelabeler& qtr){
+    if(type==Group_type) group_pattern.relabel(qtr);
+    else if(type==Pattern_type) pattern.relabel(qtr);
+    else if(type==Union_type) for(vector<GroupPattern>::iterator it=unions.begin(); it!=unions.end(); it++) it->relabel(qtr);
+    else if(type==Optional_type||type==Minus_type) optional.relabel(qtr);
+    else if(type==Filter_type) filter.relabel(qtr);
+    else if(type==Bind_type) bind.relabel(qtr);
+    else if(type==Subquery_type) {
+        QueryTreeRelabeler qtr1(qtr.suffix);
+        subquery.relabel_full(qtr1);
+    }
+}
+
+//void GroupPattern::FilterTree::FilterTreeNode::relabel(QueryTreeRelabeler& qtr){for(std::vector<FilterTreeChild>::iterator it=child.begin(); it!=child.end(); it++) it->relabel(qtr);};
+
+bool GroupPattern::populate_pattern_only(){
+    bool po=1;
+    for(vector<SubGroupPattern>::iterator it=sub_group_pattern.begin(); it!=sub_group_pattern.end(); it++) {
+        if(it->type==QueryTree::GroupPattern::SubGroupPattern::Group_type) po=po&&it->group_pattern.populate_pattern_only();
+        else if(it->type==QueryTree::GroupPattern::SubGroupPattern::Pattern_type) {}
+        else if(it->type==QueryTree::GroupPattern::SubGroupPattern::Union_type) {po=0; for(vector<GroupPattern>::iterator it2=it->unions.begin(); it2!=it->unions.end(); it2++) it2->populate_pattern_only();}
+        else if(it->type==QueryTree::GroupPattern::SubGroupPattern::Optional_type||it->type==QueryTree::GroupPattern::SubGroupPattern::Minus_type) {po=0; it->optional.populate_pattern_only();}
+        else if(it->type==QueryTree::GroupPattern::SubGroupPattern::Filter_type) po=0;
+        else if(it->type==QueryTree::GroupPattern::SubGroupPattern::Bind_type) po=0;
+        else if(it->type==QueryTree::GroupPattern::SubGroupPattern::Subquery_type) {po=0; it->subquery.getGroupPattern().populate_pattern_only();}
+    }
+    pattern_only=po;
+    return po;
 }

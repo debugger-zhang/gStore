@@ -12,6 +12,7 @@
 #include "../Util/Util.h"
 #include "../Util/Bstr.h"
 #include "../Util/Stream.h"
+#include "TempResult.h"
 
 class ResultSet
 {
@@ -41,6 +42,7 @@ public:
 	std::string to_str();
 	//convert to JSON string
 	std::string to_JSON();
+	TempResult to_tempresult();
 	void output(FILE* _fp);		//output all results using Stream
 	void setVar(const std::vector<std::string> & _var_names);
 

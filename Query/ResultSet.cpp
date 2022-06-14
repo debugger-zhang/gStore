@@ -155,19 +155,19 @@ ResultSet::to_JSON()
 {
 	stringstream _buf;
 
-	_buf << "{ \"head\": { \"link\": [], \"vars\": [";
+	_buf << "{\"head\":{\"link\":[],\"vars\":[";
 	for (int i = 0; i < this->true_select_var_num; i++)
 	{
 		if (i != 0)
-			_buf << ", ";
+			_buf << ",";
 		_buf << "\"" + this->var_name[i].substr(1) + "\"";
 	}
-	_buf << "] }, \n";
+	_buf << "]},\n";
 
-	_buf << "\t\"results\": \n";
-	_buf << "\t{\n";
-	_buf << "\t\t\"bindings\": \n";
-	_buf << "\t\t[\n";
+	_buf << "\"results\":\n";
+	_buf << "{\n";
+	_buf << "\"bindings\":\n";
+	_buf << "[\n";
 
 	if (this->useStream)
 		this->resetStream();
@@ -195,9 +195,9 @@ ResultSet::to_JSON()
 		if (i >= this->output_offset)
 		{
 			if (i != this->output_offset)
-				_buf << ",\n";
+				_buf << ",";
 
-			_buf << "\t\t\t{ ";
+			_buf << "{";
 
 			bool list_empty = true;
 			for(int j = 0; j < this->true_select_var_num; j++)
@@ -213,14 +213,14 @@ ResultSet::to_JSON()
 					continue;
                 //ans_str=Util::replace_all(ans_str,"\n","");
 				if (!list_empty)
-					_buf << ",\t";
+					_buf << ",";
 				if (ans_str[0] == '<')
 				{
 					ans_type = "uri";
 					ans_str = ans_str.substr(1, ans_str.length() - 2);
-					_buf << "\"" + this->var_name[j].substr(1) + "\": { ";
-					_buf << "\"type\": \"" + ans_type + "\", \"value\": " + Util::node2string((string("\"") + ans_str + "\"").c_str()) + " }";
-				    list_empty=false;
+
+					_buf << "\"" + this->var_name[j].substr(1) + "\":{";
+					_buf << "\"type\":\"" + ans_type + "\",\"value\":" + Util::node2string((string("\"") + ans_str + "\"").c_str()) + "}";				    list_empty=false;
 				}
 				else if (ans_str[0] == '"')
 				{
@@ -229,8 +229,8 @@ ResultSet::to_JSON()
 						//no has type string
 						ans_type = "literal";
 						ans_str = ans_str.substr(1, ans_str.rfind('"') - 1);
-						_buf << "\"" + this->var_name[j].substr(1) + "\": { ";
-						_buf << "\"type\": \"" + ans_type + "\", \"value\": " + Util::node2string((string("\"") + ans_str + "\"").c_str()) + " }";
+						_buf << "\"" + this->var_name[j].substr(1) + "\":{";
+						_buf << "\"type\":\"" + ans_type + "\",\"value\":" + Util::node2string((string("\"") + ans_str + "\"").c_str()) + "}";
 						list_empty = false;
 					}
 					else
@@ -262,8 +262,8 @@ ResultSet::to_JSON()
 								data_type = "http://www.w3.org/2001/XMLSchema#string-complete";
 							}
 							ans_str = ans_str.substr(0, pos+1);
-							_buf << "\"" + this->var_name[j].substr(1) + "\": { ";
-							_buf << "\"type\": \"" + ans_type + "\", \"datatype\": \"" + data_type + "\", \"value\": " + Util::node2string(ans_str.c_str()) + " }";
+							_buf << "\"" + this->var_name[j].substr(1) + "\":{";
+							_buf << "\"type\":\"" + ans_type + "\",\"datatype\":\"" + data_type + "\",\"value\":" + Util::node2string(ans_str.c_str()) + "}";
 							list_empty = false;
 						}
 						else
@@ -273,8 +273,8 @@ ResultSet::to_JSON()
 							int pos = ans_str.find("\"^^<");
 							data_type = "http://www.w3.org/2001/XMLSchema#string-not-complete";
 							ans_str = ans_str.substr(0, pos+1);
-							_buf << "\"" + this->var_name[j].substr(1) + "\": { ";
-							_buf << "\"type\": \"" + ans_type + "\", \"datatype\": \"" + data_type + "\", \"value\": " + Util::node2string(ans_str.c_str()) + " }";
+							_buf << "\"" + this->var_name[j].substr(1) + "\":{";
+							_buf << "\"type\":\"" + ans_type + "\",\"datatype\":\"" + data_type + "\",\"value\":" + Util::node2string(ans_str.c_str()) + "}";
 							list_empty = false;
 						}
 					}
@@ -309,12 +309,67 @@ ResultSet::to_JSON()
 		}
 	}
 
-	_buf << "\n\t\t]\n";
-	_buf << "\t}\n";
-	_buf << "}\n";
+	_buf << "]";
+	_buf << "}";
+	_buf << "}";
 
 	return _buf.str();
 }
+
+
+//convert to TSV string
+TempResult
+ResultSet::to_tempresult()
+{
+	TempResult tmp;
+    long long ans_num = max((long long)this->ansNum - this->output_offset, 0LL);
+	if (this->output_limit != -1)
+		ans_num = min(ans_num, (long long)this->output_limit);
+	if(ans_num == 0)
+	{
+		return tmp;
+	}
+
+	for(int i = 0; i < this->true_select_var_num; i++)
+	{
+        tmp.str_varset.addVar(this->var_name[i]);
+        //cout<<"##VAR##"<<this->var_name[i]<<endl;
+	}
+
+	if (this->useStream)
+		this->resetStream();
+
+	const Bstr* bp = NULL;
+	for(long long i = (!this->useStream ? this->output_offset : 0LL); i < this->ansNum; i++)
+	{
+		if (this->output_limit != -1 && i == this->output_offset + this->output_limit)
+			break;
+
+		if (this->useStream)
+			bp = this->stream->read();
+
+		if (i >= this->output_offset)
+		{
+            //cout<<"##VALUE##";
+            tmp.result.push_back(TempResult::ResultPair());
+            TempResult::ResultPair& rp=*(tmp.result.end()-1);
+			for(int j = 0; j < this->true_select_var_num; j++)
+			{
+				if (!this->useStream){
+					rp.str.push_back(Util::node2string(this->answer[i][j].c_str()));
+                    //cout<<","<<this->answer[i][j].c_str();
+				}else{
+					rp.str.push_back(Util::node2string(bp[j].getStr()));
+                    //cout<<";"<<bp[j].getStr();
+                }
+			}
+            //cout<<endl;
+		}
+	}
+
+	return tmp;
+}
+
 
 void
 ResultSet::output(FILE* _fp)

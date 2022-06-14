@@ -105,5 +105,14 @@ node_modules
 *.info
 
 /.vs
+
 /VSTree/LRUCache2.h
 /VSTree/LRUCache2.cpp
+
+.gdb_history
+tools/antlr4-cpp-runtime-4/
+tools/rapidjson/
+
+run_transaction
+transaction_test
+workload

@@ -8,8 +8,8 @@
 
 #include "GeneralEvaluation.h"
 #include<set>
+#include<list>
 using namespace std;
-
 
 GeneralEvaluation::GeneralEvaluation(VSTree *_vstree, KVstore *_kvstore, StringIndex *_stringindex, QueryCache *_query_cache, \
 	TYPE_TRIPLE_NUM *_pre2num,TYPE_TRIPLE_NUM *_pre2sub, TYPE_TRIPLE_NUM *_pre2obj, \
@@ -17,7 +17,7 @@ GeneralEvaluation::GeneralEvaluation(VSTree *_vstree, KVstore *_kvstore, StringI
 	TYPE_ENTITY_LITERAL_ID _limitID_entity, CSR *_csr, shared_ptr<Transaction> _txn):
 	vstree(_vstree), kvstore(_kvstore), stringindex(_stringindex), query_cache(_query_cache), pre2num(_pre2num), \
 	pre2sub(_pre2sub), pre2obj(_pre2obj), limitID_predicate(_limitID_predicate), limitID_literal(_limitID_literal), \
-	limitID_entity(_limitID_entity), csr(_csr), txn(_txn), fp(NULL), export_flag(false), temp_result(nullptr)
+	limitID_entity(_limitID_entity), csr(_csr), txn(_txn), fp(NULL), export_flag(false), temp_result(nullptr), global_parent(0), query_parser(make_shared<QueryParser>())
 {
 	if (csr)
 		pqHandler = new PathQueryHandler(csr);
@@ -150,8 +150,8 @@ bool GeneralEvaluation::parseQuery(const string &_query)
 {
 	try
 	{
-		this->query_parser.setQueryTree(&(this->query_tree));
-		this->query_parser.SPARQLParse(_query);
+		this->query_parser->setQueryTree(&(this->query_tree));
+		this->query_parser->SPARQLParse(_query);
 	}
 	catch (const char *e)
 	{
@@ -222,14 +222,28 @@ bool GeneralEvaluation::doQuery()
 	return true;
 }
 
-TempResultSet* GeneralEvaluation::queryEvaluation(int dep)
+TempResultSet* GeneralEvaluation::queryEvaluation(int dep, TempResultSet* parent, TempResultSet* parent_alternative)
 {
+    
+    
+    TempResultSet *result = new TempResultSet();
+    if(parent==0&&global_parent!=0) {parent=global_parent; cout<<"****GLOBAL PARENT\n";}
+    if(parent){
+        cout<<"****EXISTING RESULTS:"<<parent->results.size()<<"\n";
+        TempResultSet *new_result = new TempResultSet();
+        result->doUnion(*parent, *new_result);
+		result->release();
+		delete result;
+
+		result = new_result;
+    }
+    
 	QueryTree::GroupPattern group_pattern;
 
 	// Check well-designed (TODO: check at every depth, now only check once) //
 	// If well-designed, split and refill group_pattern according to rewriting //
 	if (well_designed == -1)
-		well_designed = (int)query_tree.checkWellDesigned();
+		well_designed = parent!=0?0:(int)query_tree.checkWellDesigned();
 
 	if (well_designed == 0)	// Not well-designed, semantic-based evaluation
 	{
@@ -240,6 +254,7 @@ TempResultSet* GeneralEvaluation::queryEvaluation(int dep)
 	}
 	else if (well_designed == 1)	// Well-designed, rewriting-based evaluation
 	{
+
 		printf("=============================\n");
 		printf("||well-designed at dep = %d||\n", dep);
 		printf("=============================\n");
@@ -262,16 +277,31 @@ TempResultSet* GeneralEvaluation::queryEvaluation(int dep)
 		}
 	}
 	group_pattern.initPatternBlockid();
-
-	TempResultSet *result = new TempResultSet();
+    cout<<"## Size:"<<group_pattern.sub_group_pattern.size()<<"@"; //DEBUG CODE
+    for (int i = 0; i < (int)group_pattern.sub_group_pattern.size(); i++) cout<<group_pattern.sub_group_pattern[i].type<<" "; //DEBUG CODE
 	// Iterate across all sub-group-patterns, process according to type
-	for (int i = 0; i < (int)group_pattern.sub_group_pattern.size(); i++)
+    list<int> cur_order, cur_subquery;
+    if(query_tree.getLimit()!=888888888) {for (int i = 0; i < (int)group_pattern.sub_group_pattern.size(); i++) cur_order.push_back(i);} else 
+    for (int i = 0; i < (int)group_pattern.sub_group_pattern.size(); i++) if(group_pattern.sub_group_pattern[i].subquery_only()){
+        cur_subquery.push_back(i);
+    } else if(group_pattern.sub_group_pattern[i].pattern_only()) {
+        cur_order.push_back(i);
+    } else {
+        cur_order.splice(cur_order.end(),cur_subquery);
+        cur_order.push_back(i);
+    }
+    cur_order.splice(cur_order.end(),cur_subquery);
+    cout<<"/";
+    for(list<int>::iterator it=cur_order.begin(); it!=cur_order.end(); it++) cout<<group_pattern.sub_group_pattern[*it].type<<" ";
+	//for (int i = 0; i < (int)group_pattern.sub_group_pattern.size(); i++)
+    for(list<int>::iterator it=cur_order.begin(); it!=cur_order.end(); it++) {
+        int i=*it;
 		if (group_pattern.sub_group_pattern[i].type == QueryTree::GroupPattern::SubGroupPattern::Group_type)
 		{
 			this->rewriting_evaluation_stack.push_back(EvaluationStackStruct());
 			this->rewriting_evaluation_stack.back().group_pattern = group_pattern.sub_group_pattern[i].group_pattern;
 			this->rewriting_evaluation_stack.back().result = NULL;
-			TempResultSet *temp = queryEvaluation(dep + 1);
+			TempResultSet *temp = queryEvaluation(dep + 1, parent, result); //TODO: IF parent_alternative IS NOT NULL, IT SHOULD BE JOINED
 
 			// if (result->results.empty())
 			// {
@@ -382,7 +412,7 @@ TempResultSet* GeneralEvaluation::queryEvaluation(int dep)
 					int varnum = (int)encode_varset[j].size();
 
 					vector<unsigned*> &basicquery_result = sparql_query.getBasicQuery(j).getResultList();
-					// todo: change this type to unsigned may fit large results query?
+                    // todo: change this type to unsigned may fit large results query?
 					int basicquery_result_num = (int)basicquery_result.size();
 
 					temp->results[0].result.reserve(basicquery_result_num);
@@ -414,7 +444,7 @@ TempResultSet* GeneralEvaluation::queryEvaluation(int dep)
 					// }
 					// else
 					// {
-					// todo: already decleared in 363?
+                    // todo: already decleared in 363?
 						TempResultSet *new_result = new TempResultSet();
 						result->doJoin(*temp, *new_result, this->stringindex, this->query_tree.getGroupPattern().group_pattern_subject_object_maximal_varset);
 
@@ -810,6 +840,72 @@ TempResultSet* GeneralEvaluation::queryEvaluation(int dep)
 				result->initial = false;
 			}
 		}
+        else if (group_pattern.sub_group_pattern[i].type == QueryTree::GroupPattern::SubGroupPattern::Subquery_type)
+		{ 
+            QueryTree& sub_query=group_pattern.sub_group_pattern[i].subquery;
+            if(sub_query.getOffset()==0&&(sub_query.getLimit()==-1||sub_query.getLimit()==123456789)&&sub_query.getGroupByVarset().empty()&&sub_query.getOrderVarVector().empty()){
+                cout<<"### Subtree (simp.) print start###\n";
+		    	sub_query.getGroupPattern().print(0);
+                cout<<"### Subtree (simp.) print end###\n";
+		    	// group_pattern.sub_group_pattern[i].group_pattern.getVarset();
+                this->rewriting_evaluation_stack.push_back(EvaluationStackStruct());
+				this->rewriting_evaluation_stack.back().group_pattern = sub_query.getGroupPattern();
+				this->rewriting_evaluation_stack.back().result = NULL;
+				TempResultSet *temp = queryEvaluation(dep + 1, sub_query.getLimit()==123456789?parent_alternative:0); //TODO: IF parent IS NOT NULL, IT SHOULD BE JOINED
+                cout<<"<SIMP> number of results: ";
+                for(std::vector<TempResult>::iterator it=temp->results.begin();it!=temp->results.end(); it++) {
+                    Varset rvs=it->getAllVarset();
+                    for(std::vector<std::string>::iterator it2=rvs.vars.begin();it2!=rvs.vars.end(); it2++){
+                        cout<<*it2<<",";
+                    }
+                    cout<<it->result.size()<<"; ";
+                }
+                cout<<endl;
+		    	if (result->results.empty())
+		    	{
+		    		delete result;
+		    		result = temp;
+		    	}
+	    		else
+		    	{
+		    		TempResultSet *new_result = new TempResultSet();
+	    			result->doJoin(*temp, *new_result, this->stringindex, this->query_tree.getGroupPattern().group_pattern_subject_object_maximal_varset);
+
+		    		temp->release();
+	    			result->release();
+		    		delete temp;
+		    		delete result;
+
+	    			result = new_result;
+	    		}
+            } else {
+                GeneralEvaluation tmp_GeneralEvaluation=*this;
+                if(sub_query.getLimit()==987654321) {tmp_GeneralEvaluation.global_parent=parent_alternative; cout<<"***SET GLOBAL PARENT***\n";} //TODO: IF parent IS NOT NULL, IT SHOULD BE JOINED
+                if(sub_query.getLimit()>=1000000000||sub_query.getLimit()==987654321) sub_query.setLimit(-1);
+                
+		    	tmp_GeneralEvaluation.getQueryTree()=sub_query;
+                cout<<"### Subtree print start###\n";
+                tmp_GeneralEvaluation.getQueryTree().print();
+                cout<<"### Subtree print end###\n";
+		    	// group_pattern.sub_group_pattern[i].group_pattern.getVarset();
+                tmp_GeneralEvaluation.doQuery();
+		    	ResultSet* temp_rs = new ResultSet();
+                tmp_GeneralEvaluation.getFinalResult(*temp_rs);
+                cout<<"<NONSIMP> number of results: "<<temp_rs->ansNum<<endl;
+                TempResultSet *temp_trs = new TempResultSet();
+                temp_trs->results.push_back(temp_rs->to_tempresult());
+                TempResultSet *new_result = new TempResultSet();
+                result->doJoin(*temp_trs, *new_result, this->stringindex, this->query_tree.getGroupPattern().group_pattern_subject_object_maximal_varset);
+                temp_trs->release();
+		    	result->release();
+	    		delete temp_trs;
+		    	delete result;
+
+			result = new_result;
+            }
+            cout<<"### Subquery ###"<<endl;
+		}
+    }
 
 	// result->print();
 
@@ -857,9 +953,7 @@ bool GeneralEvaluation::expanseFirstOuterUnionGroupPattern(QueryTree::GroupPatte
 
 	return true;
 }
-
-
-// todo: this fun not use?
+/*
 TempResultSet* GeneralEvaluation::rewritingBasedQueryEvaluation(int dep)
 {
 	// Construct group_pattern_union, which will consist of all expansion results //
@@ -1187,7 +1281,7 @@ TempResultSet* GeneralEvaluation::rewritingBasedQueryEvaluation(int dep)
 
 	return result;
 }
-
+*/
 void GeneralEvaluation::getFinalResult(ResultSet &ret_result)
 {
 
@@ -1518,7 +1612,7 @@ void GeneralEvaluation::getFinalResult(ResultSet &ret_result)
 						for (size_t i = 2; i < proj[0].func_args.size() - 1; i++)
 						{
 							pred = proj[0].func_args[i];
-							query_parser.replacePrefix(pred);
+							query_parser->replacePrefix(pred);
 							pred_id_set.push_back(kvstore->getIDByPredicate(pred));
 						}
 						if (pred_id_set.empty())
@@ -2176,7 +2270,7 @@ void GeneralEvaluation::getFinalResult(ResultSet &ret_result)
 							for (size_t i = 2; i < proj[0].func_args.size() - 1; i++)
 							{
 								pred = proj[0].func_args[i];
-								query_parser.replacePrefix(pred);
+								query_parser->replacePrefix(pred);
 								pred_id_set.push_back(kvstore->getIDByPredicate(pred));
 							}
 							if (pred_id_set.empty())
@@ -3048,8 +3142,7 @@ void GeneralEvaluation::fillCandList(SPARQLquery& sparql_query, int dep, vector<
 		}
 	}
 }
-
-// todo: why not use? could replace 548 line
+/*
 void GeneralEvaluation::joinBasicQueryResult(SPARQLquery& sparql_query, TempResultSet *new_result, TempResultSet *sub_result, vector<vector<string> >& encode_varset, \
 	vector<vector<QueryTree::GroupPattern::Pattern> >& basic_query_handle, long tv_begin, long tv_handle, int dep)
 {
@@ -3111,4 +3204,4 @@ void GeneralEvaluation::joinBasicQueryResult(SPARQLquery& sparql_query, TempResu
 	sub_result->results[0].getAllVarset();
 	printf("11111\n");
 }
-
+*/
